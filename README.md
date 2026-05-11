@@ -1,6 +1,6 @@
 # Business Research Assistant
 
-A multi-agent business research CLI built with **LangGraph**, **Gemini** (Google AI Studio), and **Tavily**. Type any business question; the system clarifies it if vague, runs targeted web searches, validates the findings, then writes you a structured report.
+A multi-agent business research assistant built with **LangGraph**, **Groq** (llama-3.3-70b-versatile), and **Tavily**. Type any business question; the system clarifies it if vague, runs targeted web searches, validates the findings, then writes you a structured report. Comes with both an interactive CLI and a Next.js web UI.
 
 ## Pipeline
 
@@ -55,7 +55,7 @@ Repository root (`synapse-ai/`):
 │   ├── tools/
 │   │   └── search.py    # Tavily wrapper
 │   └── utils/
-│       └── llm.py       # shared Gemini instance
+│       └── llm.py       # shared Groq instance (llama-3.3-70b-versatile)
 └── frontend/            # Next.js app
     ├── app/
     ├── components/
@@ -110,11 +110,11 @@ copy .env.example .env
 Then open `.env` and set:
 
 ```
-GOOGLE_API_KEY=your_gemini_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 TAVILY_API_KEY=your_tavily_api_key_here
 ```
 
-- **Gemini key** (free): https://aistudio.google.com/apikey
+- **Groq key** (free): https://console.groq.com/keys
 - **Tavily key** (free tier available): https://app.tavily.com
 
 ### 5. Run the assistant (CLI)
@@ -129,7 +129,7 @@ You'll get an interactive prompt:
 ```
 ============================================================
    Business Research Assistant
-   Powered by Gemini + Tavily + LangGraph
+   Powered by Groq + Tavily + LangGraph
 ============================================================
 
 You:
@@ -184,25 +184,27 @@ When clarification is requested, just type a more specific follow-up at the prom
 
 ## How multi-turn memory works
 
-All queries within a session share one `thread_id`. The LangGraph `MemorySaver` checkpointer accumulates `messages` across turns, so the synthesis agent sees the last few conversational exchanges as context. Per-query pipeline state (`clarity_status`, `research_attempts`, `validation_result`, …) is intentionally reset on every new query so stale verdicts don't leak forward.
+All queries within a session share one `thread_id`. The LangGraph `SqliteSaver` checkpointer persists `messages` to `data/conversations.db`, so conversation history survives server restarts and the synthesis agent sees prior exchanges as context. Per-query pipeline state (`clarity_status`, `research_attempts`, `validation_result`, …) is intentionally reset on every new query so stale verdicts don't leak forward.
 
 ## Customising
 
 | Want to … | Edit |
 | --- | --- |
-| Use a different Gemini model | Set `GEMINI_MODEL` in `.env` (e.g. `gemini-2.5-pro`) |
+| Use a different Groq model | Change `model=` in `get_llm()` inside `backend/utils/llm.py` (e.g. `mixtral-8x7b-32768`) |
 | Allow more research retries | Change `_MAX_RESEARCH_ATTEMPTS` in `backend/graph/graph_builder.py` |
-| Tighten / loosen the validator | Adjust `_SCORE_THRESHOLD_LOW` and `_SCORE_THRESHOLD_HIGH` in `backend/graph/nodes/validator_agent.py` |
+| Tighten / loosen the validator | Adjust the system prompt in `backend/graph/nodes/validator_agent.py` |
 | Change Tavily depth | `search_tool = TavilySearch(max_results=...)` in `backend/tools/search.py` |
 | Disable the data-quality disclaimer | Lower `_LOW_CONFIDENCE_THRESHOLD` in `backend/graph/nodes/synthesis_agent.py` |
-| Persist state to disk | Replace `MemorySaver` with `SqliteSaver` or `PostgresSaver` in `backend/graph/graph_builder.py` |
+| Switch to PostgreSQL persistence | Replace `SqliteSaver` with `PostgresSaver(conn=async_pg_pool)` in `backend/graph/graph_builder.py` |
 
 ## Troubleshooting
 
-- **`GOOGLE_API_KEY is not set` / `TAVILY_API_KEY is not set`** — your `.env` is missing or in the wrong folder. It must live at the **repository root** (next to `README.md`).
+- **`GROQ_API_KEY not found in .env`** — your `.env` is missing or in the wrong folder. It must live at the **repository root** (next to `README.md`).
+- **`TAVILY_API_KEY not found in .env`** — same as above; both keys must be set in the root `.env`.
 - **`ModuleNotFoundError: langchain_tavily`** — re-run `pip install -r requirements.txt`. The non-deprecated Tavily tool lives in this package.
 - **Graph hangs after clarification request** — make sure you're typing a clarification then pressing Enter at the `Your clarification:` prompt; the assistant is waiting on stdin.
 - **`UnicodeEncodeError: 'charmap'`** — only triggers on Windows console with non-UTF8 code page; run `chcp 65001` in PowerShell before `python main.py` (from `backend/`) to force UTF-8.
+- **Groq rate limit (429)** — the free tier allows ~30 requests/minute; wait a moment and retry. The error handler will print a helpful message rather than crashing.
 
 ## License
 
