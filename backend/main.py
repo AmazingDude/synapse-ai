@@ -7,7 +7,7 @@ warnings, search failures — goes through the standard ``logging`` module
 configured via ``utils.logging_config.configure_logging()``.
 
 Run with:
-    cd business-research-assistant/backend
+    cd backend
     python main.py
 
 Type "exit", "quit", "bye", or "q" to leave the session.

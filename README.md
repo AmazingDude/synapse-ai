@@ -32,29 +32,34 @@ research_agent ──> validator_agent
 
 ## Project layout
 
+Repository root (`synapse-ai/`):
+
 ```
-business-research-assistant/
-├── .env                # your real API keys (gitignored)
-├── .env.example        # template
-├── main.py             # interactive CLI runner
-├── requirements.txt
+.
+├── .env                 # your real API keys (gitignored)
+├── .env.example         # template
 ├── README.md
-├── graph/
-│   ├── __init__.py     # empty by design (avoids eager LLM init)
-│   ├── state.py        # GraphState (TypedDict + add_messages reducer)
-│   ├── graph_builder.py
-│   └── nodes/
-│       ├── __init__.py
-│       ├── clarity_agent.py
-│       ├── research_agent.py
-│       ├── validator_agent.py
-│       └── synthesis_agent.py
-├── tools/
-│   ├── __init__.py
-│   └── search.py       # Tavily wrapper (search_tool + helpers)
-└── utils/
-    ├── __init__.py
-    └── llm.py          # shared Gemini llm instance
+├── requirements.txt
+├── backend/
+│   ├── main.py          # interactive CLI runner
+│   ├── api.py           # FastAPI + SSE for the web UI
+│   ├── graph/
+│   │   ├── __init__.py
+│   │   ├── state.py
+│   │   ├── graph_builder.py
+│   │   └── nodes/
+│   │       ├── clarity_agent.py
+│   │       ├── research_agent.py
+│   │       ├── validator_agent.py
+│   │       └── synthesis_agent.py
+│   ├── tools/
+│   │   └── search.py    # Tavily wrapper
+│   └── utils/
+│       └── llm.py       # shared Gemini instance
+└── frontend/            # Next.js app
+    ├── app/
+    ├── components/
+    └── lib/
 ```
 
 ## Setup
@@ -62,7 +67,7 @@ business-research-assistant/
 ### 1. Clone / open the project
 
 ```powershell
-cd c:\Users\Rehan\Desktop\web-dev\synapse-ai\business-research-assistant
+cd c:\Users\Rehan\Desktop\web-dev\synapse-ai
 ```
 
 ### 2. Create + activate a virtual environment
@@ -112,9 +117,10 @@ TAVILY_API_KEY=your_tavily_api_key_here
 - **Gemini key** (free): https://aistudio.google.com/apikey
 - **Tavily key** (free tier available): https://app.tavily.com
 
-### 5. Run the assistant
+### 5. Run the assistant (CLI)
 
 ```powershell
+cd backend
 python main.py
 ```
 
@@ -135,7 +141,7 @@ Type any business question; type `exit`, `quit`, `bye`, or `q` to leave.
 
 
 
-Open **two terminals** from the `business-research-assistant/` directory:
+Open **two terminals** from the **repository root** (`synapse-ai/`):
 
 **Terminal 1 — FastAPI backend**
 
@@ -185,18 +191,18 @@ All queries within a session share one `thread_id`. The LangGraph `MemorySaver` 
 | Want to … | Edit |
 | --- | --- |
 | Use a different Gemini model | Set `GEMINI_MODEL` in `.env` (e.g. `gemini-2.5-pro`) |
-| Allow more research retries | Change `_MAX_RESEARCH_ATTEMPTS` in `graph/graph_builder.py` |
-| Tighten / loosen the validator | Adjust `_SCORE_THRESHOLD_LOW` and `_SCORE_THRESHOLD_HIGH` in `graph/nodes/validator_agent.py` |
-| Change Tavily depth | `search_tool = TavilySearch(max_results=...)` in `tools/search.py` |
-| Disable the data-quality disclaimer | Lower `_LOW_CONFIDENCE_THRESHOLD` in `graph/nodes/synthesis_agent.py` |
-| Persist state to disk | Replace `MemorySaver` with `SqliteSaver` or `PostgresSaver` in `graph/graph_builder.py` |
+| Allow more research retries | Change `_MAX_RESEARCH_ATTEMPTS` in `backend/graph/graph_builder.py` |
+| Tighten / loosen the validator | Adjust `_SCORE_THRESHOLD_LOW` and `_SCORE_THRESHOLD_HIGH` in `backend/graph/nodes/validator_agent.py` |
+| Change Tavily depth | `search_tool = TavilySearch(max_results=...)` in `backend/tools/search.py` |
+| Disable the data-quality disclaimer | Lower `_LOW_CONFIDENCE_THRESHOLD` in `backend/graph/nodes/synthesis_agent.py` |
+| Persist state to disk | Replace `MemorySaver` with `SqliteSaver` or `PostgresSaver` in `backend/graph/graph_builder.py` |
 
 ## Troubleshooting
 
-- **`GOOGLE_API_KEY is not set` / `TAVILY_API_KEY is not set`** — your `.env` is missing or in the wrong folder. It must live next to `main.py`.
+- **`GOOGLE_API_KEY is not set` / `TAVILY_API_KEY is not set`** — your `.env` is missing or in the wrong folder. It must live at the **repository root** (next to `README.md`).
 - **`ModuleNotFoundError: langchain_tavily`** — re-run `pip install -r requirements.txt`. The non-deprecated Tavily tool lives in this package.
 - **Graph hangs after clarification request** — make sure you're typing a clarification then pressing Enter at the `Your clarification:` prompt; the assistant is waiting on stdin.
-- **`UnicodeEncodeError: 'charmap'`** — only triggers on Windows console with non-UTF8 code page; run `chcp 65001` in PowerShell before `python main.py` to force UTF-8.
+- **`UnicodeEncodeError: 'charmap'`** — only triggers on Windows console with non-UTF8 code page; run `chcp 65001` in PowerShell before `python main.py` (from `backend/`) to force UTF-8.
 
 ## License
 

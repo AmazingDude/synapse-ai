@@ -32,7 +32,7 @@ Flow
 
 Run the server
 --------------
-  cd business-research-assistant/backend
+  cd backend
   uvicorn api:app --reload --port 8000
 """
 
