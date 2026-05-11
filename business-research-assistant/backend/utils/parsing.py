@@ -4,8 +4,6 @@ Shared parsing helpers for the business research assistant.
 This module centralises text-parsing utilities that multiple agents need so we
 do not duplicate fragile regex / JSON-extraction logic across files.
 """
-# CHANGED: new file — extracted from research_agent.py and validator_agent.py
-
 
 def extract_outermost_json(text: str) -> str | None:
     """Return the outermost ``{...}`` block in *text*, or ``None`` if absent.

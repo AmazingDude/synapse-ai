@@ -7,6 +7,7 @@ warnings, search failures — goes through the standard ``logging`` module
 configured via ``utils.logging_config.configure_logging()``.
 
 Run with:
+    cd business-research-assistant/backend
     python main.py
 
 Type "exit", "quit", "bye", or "q" to leave the session.
@@ -14,7 +15,7 @@ Type "exit", "quit", "bye", or "q" to leave the session.
 
 from __future__ import annotations
 
-import logging  # CHANGED: use logging instead of print for backend traces
+import logging
 import sys
 import uuid
 from pathlib import Path
@@ -25,19 +26,15 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
-from utils.logging_config import configure_logging  # CHANGED: central logger setup
+from utils.logging_config import configure_logging
 
-logger = logging.getLogger(__name__)  # CHANGED: module-level logger for _run_query error reporting
+logger = logging.getLogger(__name__)
 
-
-# CHANGED: ensure emoji / unicode in NODE_LABELS work on Windows cp1252 console.
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # CHANGED
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # CHANGED
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-
-# CHANGED: friendly per-node progress labels (emoji + clear action verb).
 NODE_LABELS: dict[str, str] = {
     "clarity_agent":   "🔍  Evaluating query clarity...",
     "human_feedback":  "💬  Waiting for clarification...",
@@ -45,7 +42,6 @@ NODE_LABELS: dict[str, str] = {
     "validator_agent": "✅  Validating research quality...",
     "synthesis_agent": "📝  Generating report...",
 }
-
 
 def _print_banner() -> None:
     """Welcome banner shown once at session start."""
@@ -59,13 +55,11 @@ def _print_banner() -> None:
     print("=" * 60)
     print()
 
-
-def _print_node_label(node_name: str) -> None:  # CHANGED: simpler than diff-based stage detection
+def _print_node_label(node_name: str) -> None:
     """Print the user-friendly emoji label for *node_name*, if recognised."""
     label = NODE_LABELS.get(node_name)
     if label:
         print(label)
-
 
 def _extract_final_report(app: Any, config: dict) -> str:
     """Return the most recent non-empty AIMessage from the checkpointed state."""
@@ -78,12 +72,11 @@ def _extract_final_report(app: Any, config: dict) -> str:
             return str(msg.content).strip()
     return ""
 
-
 # ---------------------------------------------------------------------------
 # Per-query execution
 # ---------------------------------------------------------------------------
 
-def _run_query(app: Any, user_input: str, config: dict) -> None:  # CHANGED: rewritten for updates mode
+def _run_query(app: Any, user_input: str, config: dict) -> None:
     """Stream one research query through the graph and print the final report.
 
     Uses ``stream_mode="updates"`` so each event is keyed by the node name
@@ -113,8 +106,7 @@ def _run_query(app: Any, user_input: str, config: dict) -> None:  # CHANGED: rew
         interrupted = False
 
         try:
-            # CHANGED: stream_mode="updates" -> events are {node_name: state_delta}
-            #          or {"__interrupt__": (Interrupt,)}.
+            # stream_mode="updates" yields {node_name: delta} or __interrupt__ entries.
             for event in app.stream(current_input, config, stream_mode="updates"):
 
                 # ---- interrupt: graph paused for human clarification ----
@@ -140,9 +132,8 @@ def _run_query(app: Any, user_input: str, config: dict) -> None:  # CHANGED: rew
                     break  # restart the streaming loop with Command(resume=...)
 
                 # ---- normal node output: print friendly progress label ----
-                for node_name in event.keys():  # CHANGED: direct node name from updates mode
+                for node_name in event.keys():
                     _print_node_label(node_name)
-                    # CHANGED: divider line just before the final report.
                     if node_name == "synthesis_agent":
                         print()
                         print("-" * 60)
@@ -165,15 +156,15 @@ def _run_query(app: Any, user_input: str, config: dict) -> None:  # CHANGED: rew
             interrupted = True
 
         except Exception as exc:  # noqa: BLE001
-            error_str = str(exc)  # CHANGED: inspect error text to detect rate limits
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:  # CHANGED: rate-limit detection
-                print("\n  ⚠️  Rate limit reached (too many requests to Gemini).")  # CHANGED
-                print("  Wait a minute and try again, or check your quota at:")  # CHANGED
-                print("  https://ai.dev/rate-limit\n")  # CHANGED
-            else:  # CHANGED
-                print(f"\n  ❌  Something went wrong: {exc}\n")  # CHANGED: single clean line, no stale report
-            logger.error("Graph execution failed: %s", exc)  # CHANGED: was logging.getLogger(__name__).error inline
-            return  # CHANGED: exit _run_query entirely — skips _extract_final_report so stale report is never printed
+            error_str = str(exc)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                print("\n  ⚠️  Rate limit reached (too many requests to Gemini).")
+                print("  Wait a minute and try again, or check your quota at:")
+                print("  https://ai.dev/rate-limit\n")
+            else:
+                print(f"\n  ❌  Something went wrong: {exc}\n")
+            logger.error("Graph execution failed: %s", exc)
+            return
 
         if not interrupted:
             break
@@ -186,17 +177,16 @@ def _run_query(app: Any, user_input: str, config: dict) -> None:  # CHANGED: rew
     else:
         print("\n  [No report was generated. Check the logs above for errors.]")
 
-
 # ---------------------------------------------------------------------------
 # Session entry point
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    # CHANGED: configure logging FIRST so any module-level loggers from
-    #          downstream imports use our format from the start.
+    # Configure logging before imports that may emit on load.
     configure_logging(level=logging.INFO)
 
-    load_dotenv(Path(__file__).resolve().parent / ".env")
+    # main.py lives under backend/; project-root .env is two levels up.
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
     # Import after dotenv so .env is loaded before any module-level reads.
     from graph.graph_builder import build_graph
@@ -227,7 +217,6 @@ def main() -> int:
         print()
 
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

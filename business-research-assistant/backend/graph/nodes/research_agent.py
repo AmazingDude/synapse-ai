@@ -7,29 +7,26 @@ score (0-10).
 """
 
 import json
-import logging  # CHANGED: replaced print() with logging
+import logging
 import re
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from graph.state import GraphState
 from tools.search import format_search_results, web_search
-from utils.llm import get_llm  # CHANGED: lazy singleton
-from utils.parsing import extract_outermost_json  # CHANGED: shared parser
+from utils.llm import get_llm
+from utils.parsing import extract_outermost_json
 
-logger = logging.getLogger(__name__)  # CHANGED
-
-# Common question/command prefixes stripped before building search queries.
-_STRIP_PREFIX_RE = re.compile(
-    r"^(what\s+(is|are|was|were)\s+(the\s+)?|tell\s+me\s+about\s+|"
-    r"give\s+me\s+(a\s+)?(summary\s+of\s+|overview\s+of\s+)?|"
-    r"can\s+you\s+(research\s+|find\s+)?|find\s+(out\s+)?about\s+|"
-    r"how\s+(is|are|does|do)\s+|describe\s+|research\s+|analyze\s+)",
-    re.IGNORECASE,
-)
+logger = logging.getLogger(__name__)
 
 # Collapses any whitespace run (incl. newlines from combined multi-turn queries) to a single space.
-_WHITESPACE_RE = re.compile(r"\s+")  # CHANGED: handle combined_query newlines
+_WHITESPACE_RE = re.compile(r"\s+")
+
+_SUBJECT_EXTRACTION_PROMPT = (
+    "Extract the company name and research topic from this query history. "
+    "Return ONLY a short search-friendly string of 2-5 words. No punctuation. "
+    "Examples: 'Apple competitors', 'Tesla financials', 'Microsoft CEO leadership'"
+)
 
 _SYNTHESIS_SYSTEM_PROMPT = """\
 You are a senior business research analyst. Your task is to synthesise raw
@@ -70,13 +67,40 @@ Respond with ONLY a single valid JSON object (no markdown fences):
 }
 """
 
+def _extract_search_subject(combined_query: str) -> str:
+    """Use the LLM to distil a clean 2-5 word search-friendly subject from *combined_query*.
 
-def _extract_subject(query: str) -> str:
-    """Derive a clean search subject from the (possibly multi-line) user query."""
-    one_line = _WHITESPACE_RE.sub(" ", query).strip()  # CHANGED: collapse newlines from combined_query
-    stripped = _STRIP_PREFIX_RE.sub("", one_line).strip(" ?.,!").strip()  # CHANGED
-    return stripped or one_line or query.strip()  # CHANGED
+    Calling the LLM here (before any Tavily searches) costs one small round-trip
+    but produces far cleaner search queries than regex stripping, especially for
+    multi-turn inputs like:
+      "Tell me about Apple\\nWhat about their competitors?"  →  "Apple competitors"
 
+    Falls back to the first line of *combined_query* truncated to 50 chars if
+    the LLM call fails (network error, rate limit, etc.).
+    """
+    try:
+        response = get_llm().invoke([
+            SystemMessage(content=_SUBJECT_EXTRACTION_PROMPT),
+            HumanMessage(content=combined_query),
+        ])
+        subject = (
+            str(response.content).strip()
+            if hasattr(response, "content")
+            else str(response).strip()
+        )
+        # Collapse whitespace and strip stray punctuation from the LLM output.
+        subject = _WHITESPACE_RE.sub(" ", subject).strip(" ?.,!\"'")
+        if subject:
+            logger.info("LLM subject extraction: %r -> %r", combined_query[:60], subject)
+            return subject
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "LLM subject extraction failed (%s); falling back to first line.", exc
+        )
+    # Fallback: take the first line of the combined query, truncated to 50 chars.
+    fallback = combined_query.split("\n")[0][:50].strip()
+    logger.info("Subject fallback: %r", fallback)
+    return fallback or combined_query.strip()[:50]
 
 def _build_search_queries(subject: str) -> list[str]:
     return [
@@ -84,7 +108,6 @@ def _build_search_queries(subject: str) -> list[str]:
         f"{subject} financials revenue business overview",
         f"{subject} recent developments products leadership",
     ]
-
 
 def _run_searches(queries: list[str]) -> tuple[str, int]:
     """Execute every search; return (aggregated_text, success_count)."""
@@ -97,21 +120,20 @@ def _run_searches(queries: list[str]) -> tuple[str, int]:
             formatted = format_search_results(resp)
             chunks.append(f"### Search: {q}\n{formatted}")
             success_count += 1
-            logger.info(  # CHANGED: was print()
+            logger.info(
                 "Search OK: %r (%d results)",
                 q,
                 len(resp.get("results", [])),
             )
         except Exception as exc:  # noqa: BLE001
             chunks.append(f"### Search: {q}\n(search error: {exc})")
-            logger.error("Search FAILED: %r - %s", q, exc)  # CHANGED: was print()
+            logger.error("Search FAILED: %r - %s", q, exc)
 
     return "\n\n".join(chunks), success_count
 
-
 def _parse_synthesis(raw: str, success_count: int) -> tuple[str, float]:
     """Parse the LLM JSON synthesis; fall back gracefully on errors."""
-    json_str = extract_outermost_json(raw)  # CHANGED: shared helper
+    json_str = extract_outermost_json(raw)
     if json_str:
         try:
             data = json.loads(json_str)
@@ -120,12 +142,11 @@ def _parse_synthesis(raw: str, success_count: int) -> tuple[str, float]:
             score = max(0.0, min(10.0, score))
             return findings, score
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
-            logger.warning("JSON parse error in synthesis response: %s", exc)  # CHANGED
+            logger.warning("JSON parse error in synthesis response: %s", exc)
 
     fallback_score = min(6.0, float(success_count) * 2.0)
-    logger.warning("Using fallback synthesis output: confidence=%.1f", fallback_score)  # CHANGED
+    logger.warning("Using fallback synthesis output: confidence=%.1f", fallback_score)
     return raw.strip(), fallback_score
-
 
 def _recent_message_context(messages: list[BaseMessage], n: int = 4) -> str:
     """Compact recent-conversation context for the synthesis prompt."""
@@ -134,7 +155,6 @@ def _recent_message_context(messages: list[BaseMessage], n: int = 4) -> str:
         role = "User" if isinstance(msg, HumanMessage) else "Assistant"
         lines.append(f"{role}: {str(msg.content).strip()}")
     return "\n".join(lines)
-
 
 def research_agent(state: GraphState) -> dict:
     """Run targeted Tavily searches and synthesise structured business findings."""
@@ -145,12 +165,12 @@ def research_agent(state: GraphState) -> dict:
                 query = str(msg.content).strip()
                 break
 
-    subject = _extract_subject(query)
-    logger.info("Subject: %r", subject)  # CHANGED
+    subject = _extract_search_subject(query)
+    logger.info("Search subject: %r", subject)
 
     search_queries = _build_search_queries(subject)
     aggregated_results, success_count = _run_searches(search_queries)
-    logger.info(  # CHANGED
+    logger.info(
         "%d/%d searches succeeded", success_count, len(search_queries),
     )
 
@@ -167,14 +187,15 @@ def research_agent(state: GraphState) -> dict:
         ),
     ]
 
-    response = get_llm().invoke(synthesis_prompt)  # CHANGED: lazy llm
+    response = get_llm().invoke(synthesis_prompt)
     raw_text = str(response.content) if hasattr(response, "content") else str(response)
 
     findings, confidence = _parse_synthesis(raw_text, success_count)
-    logger.info("confidence_score=%.1f", confidence)  # CHANGED
+    logger.info("confidence_score=%.1f", confidence)
 
     return {
         "research_findings": findings,
         "confidence_score": confidence,
         "research_attempts": (state.get("research_attempts") or 0) + 1,
+        "search_subject": subject,
     }

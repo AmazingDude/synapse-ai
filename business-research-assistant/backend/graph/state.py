@@ -13,7 +13,6 @@ from typing import Annotated, Literal, NotRequired, Required, TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-
 class GraphState(TypedDict, total=False):
     # Incoming turns (HumanMessage), agent replies (AIMessage), and optional role/system
     # messages accumulate here. Uses LangGraph’s ``add_messages`` reducer (same contract as
@@ -41,3 +40,7 @@ class GraphState(TypedDict, total=False):
 
     # Clarified objectives, clarification Q&A transcript segment, or parser-extracted brief.
     clarification_response: str | None
+
+    # LLM-extracted compact search subject, e.g. "Apple competitors" or "Tesla financials".
+    # Set by research_agent; used for logging and potential future routing decisions.
+    search_subject: str | None

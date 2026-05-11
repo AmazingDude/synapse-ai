@@ -11,13 +11,11 @@ Conventions used across the codebase
 - ``logger.warning`` — recoverable issues (e.g. JSON parse fell back)
 - ``logger.error``   — API/network failures, missing keys, unhandled exceptions
 """
-# CHANGED: new file
 
 import logging
 import sys
 
-_CONFIGURED = False  # CHANGED: idempotency guard
-
+_CONFIGURED = False
 
 def configure_logging(level: int = logging.INFO) -> None:
     """Initialise the root logger with a single console handler.
@@ -28,22 +26,22 @@ def configure_logging(level: int = logging.INFO) -> None:
     Args:
         level: Default severity threshold (``logging.INFO`` by default).
     """
-    global _CONFIGURED  # CHANGED
-    if _CONFIGURED:  # CHANGED
-        return  # CHANGED
+    global _CONFIGURED
+    if _CONFIGURED:
+        return
 
-    root = logging.getLogger()  # CHANGED
-    root.setLevel(level)  # CHANGED
+    root = logging.getLogger()
+    root.setLevel(level)
 
     # Remove any handlers added by libraries on import so our format wins.
-    for handler in list(root.handlers):  # CHANGED
-        root.removeHandler(handler)  # CHANGED
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
 
-    handler = logging.StreamHandler(stream=sys.stderr)  # CHANGED
-    handler.setLevel(level)  # CHANGED
-    handler.setFormatter(  # CHANGED
-        logging.Formatter("%(levelname)s | %(name)s | %(message)s")  # CHANGED
+    handler = logging.StreamHandler(stream=sys.stderr)
+    handler.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter("%(levelname)s | %(name)s | %(message)s")
     )
-    root.addHandler(handler)  # CHANGED
+    root.addHandler(handler)
 
-    _CONFIGURED = True  # CHANGED
+    _CONFIGURED = True

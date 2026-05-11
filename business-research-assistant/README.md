@@ -131,6 +131,33 @@ You:
 
 Type any business question; type `exit`, `quit`, `bye`, or `q` to leave.
 
+## Running the full stack
+
+
+
+Open **two terminals** from the `business-research-assistant/` directory:
+
+**Terminal 1 — FastAPI backend**
+
+```powershell
+cd backend
+uvicorn api:app --reload --port 8000
+```
+
+**Terminal 2 — Next.js frontend**
+
+```powershell
+cd frontend
+npm run dev
+```
+
+Then open **http://localhost:3000** in your browser.
+
+> The Next.js dev server proxies every `/api/*` request to `http://localhost:8000`
+> so no CORS configuration is needed during development.
+
+---
+
 ## Example queries to try
 
 **Specific (will run straight through):**

@@ -52,19 +52,23 @@ so the clarity agent re-evaluates the refined query.
 
 Checkpointing
 -------------
-A ``MemorySaver`` checkpointer is attached so the graph can persist state
-between the initial invocation and any interrupt resumptions within the same
-process.  Every call to ``build_graph()`` creates a fresh in-memory store;
-for production persistence swap in a ``SqliteSaver`` or ``PostgresSaver``.
+A ``SqliteSaver`` checkpointer writes every checkpoint to a local SQLite file
+(``data/conversations.db`` relative to the project root).  Conversation history
+therefore survives process restarts — the graph resumes exactly where it left
+off for a given ``thread_id``.
+
+# PRODUCTION: swap SqliteSaver for PostgresSaver(conn=async_pg_pool) here.
 
 Note: ``GraphState`` is the correct state class name — ``ResearchState`` does
 not exist in this codebase.
 """
 
-import logging  # CHANGED: replaced any future print() with logging
+import logging
+import sqlite3
+from pathlib import Path
 
 from langchain_core.messages import HumanMessage
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
@@ -74,12 +78,11 @@ from graph.nodes.synthesis_agent import synthesis_agent
 from graph.nodes.validator_agent import validator_agent
 from graph.state import GraphState
 
-logger = logging.getLogger(__name__)  # CHANGED
+logger = logging.getLogger(__name__)
 
 # Maximum number of research passes before forcing synthesis regardless of
 # validation verdict.  Prevents an infinite research ↔ validator loop.
 _MAX_RESEARCH_ATTEMPTS = 3
-
 
 # ---------------------------------------------------------------------------
 # Human-feedback node
@@ -106,7 +109,7 @@ def human_feedback_node(state: GraphState) -> dict:
     - ``clarity_status`` — reset to ``None`` so ``clarity_agent`` re-evaluates
                            the new query from scratch
     """
-    original = (state.get("original_query") or "").strip()  # CHANGED: kept only for payload context
+    original = (state.get("original_query") or "").strip()
 
     # Pause here on first run; return user's text on resumption.
     user_input: str = interrupt(
@@ -119,21 +122,18 @@ def human_feedback_node(state: GraphState) -> dict:
         }
     )
 
-    clarification = str(user_input).strip() if user_input else ""  # CHANGED: empty if no clarification
+    clarification = str(user_input).strip() if user_input else ""
 
-    logger.info("Human clarification received: %r", clarification)  # CHANGED
+    logger.info("Human clarification received: %r", clarification)
 
-    # CHANGED: do NOT overwrite original_query here. The clarity_agent will
-    #          re-combine all recent HumanMessages (including this one) into a
-    #          fresh combined_query and set it as the new original_query. This
-    #          is the BUG-2 fix: the agent now sees both "Tell me about Apple"
-    #          and the clarification text as a single combined intent.
+    # Do not overwrite original_query here: clarity_agent re-combines all recent
+    # HumanMessages (including this clarification) into combined_query and updates
+    # original_query downstream.
     update: dict = {
         "messages": [HumanMessage(content=clarification or "(no clarification provided)")],
         "clarity_status": None,  # Reset so clarity_agent re-evaluates from scratch.
     }
-    return update  # CHANGED: original_query no longer overwritten
-
+    return update
 
 # ---------------------------------------------------------------------------
 # Routing functions
@@ -154,7 +154,6 @@ def _route_from_clarity(state: GraphState) -> str:
     # clarity_status == "clear" (or unexpected value) — safe to research.
     return "research_agent"
 
-
 def _route_from_research(state: GraphState) -> str:
     """Route after research_agent — always proceeds to validator.
 
@@ -165,7 +164,6 @@ def _route_from_research(state: GraphState) -> str:
     # Both branches lead to validation; confidence score is used by the
     # validator itself, not here, to keep routing concerns separated.
     return "validator_agent"
-
 
 def _route_from_validator(state: GraphState) -> str:
     """Route after validator_agent — either retry research or synthesise.
@@ -191,7 +189,6 @@ def _route_from_validator(state: GraphState) -> str:
 
     # Sufficient, OR we've exhausted retries — write the best report possible.
     return "synthesis_agent"
-
 
 # ---------------------------------------------------------------------------
 # Graph assembly
@@ -256,9 +253,18 @@ def build_graph():
     # Synthesis is always the terminal node.
     workflow.add_edge("synthesis_agent", END)
 
-    # ----------------------------------------- compile with memory checkpointer
-    # MemorySaver stores all checkpoint data in-process RAM.  This is required
-    # for interrupt/resume to function; without a checkpointer interrupt() has
-    # no way to serialise and restore graph state between the pause and resume.
-    memory = MemorySaver()
-    return workflow.compile(checkpointer=memory)
+    # ----------------------------------------- compile with SQLite checkpointer
+    # SqliteSaver persists checkpoints to disk so conversation history survives
+    # restarts. Database file: project-root/data/conversations.db.
+    #
+    # SqliteSaver.from_conn_string() is a context manager, so for a server that
+    # must keep the connection open for its entire lifetime we open the raw
+    # sqlite3 connection ourselves and pass it in directly — same pattern that
+    # from_conn_string() uses internally.
+    #
+    # PRODUCTION: swap SqliteSaver for PostgresSaver(conn=async_pg_pool) here.
+    db_path = Path(__file__).parent.parent.parent / "data" / "conversations.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    _conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    checkpointer = SqliteSaver(conn=_conn)
+    return workflow.compile(checkpointer=checkpointer)

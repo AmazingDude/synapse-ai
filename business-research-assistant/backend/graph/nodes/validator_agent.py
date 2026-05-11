@@ -7,16 +7,16 @@ an executive report.  Returns a binary verdict.
 """
 
 import json
-import logging  # CHANGED: replaced print() with logging
+import logging
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import GraphState
-from utils.llm import get_llm  # CHANGED: lazy singleton
-from utils.parsing import extract_outermost_json  # CHANGED: shared parser
+from utils.llm import get_llm
+from utils.parsing import extract_outermost_json
 
-logger = logging.getLogger(__name__)  # CHANGED
+logger = logging.getLogger(__name__)
 
 _SCORE_THRESHOLD_LOW = 4.0
 _SCORE_THRESHOLD_HIGH = 7.0
@@ -55,7 +55,6 @@ Respond with ONLY a valid JSON object (no markdown fences, no extra text):
 {"validation_result": "sufficient" | "insufficient", "gaps": "<one sentence - what is missing, or 'none'>"}
 """
 
-
 def _interpret_score(score: float | None) -> str:
     if score is None:
         return "No confidence score available; judge solely on content."
@@ -75,12 +74,11 @@ def _interpret_score(score: float | None) -> str:
         "Verify there are no critical gaps before confirming 'sufficient'."
     )
 
-
 def _parse_validation_response(
     raw: str,
 ) -> tuple[Literal["sufficient", "insufficient"], str]:
     """Three-stage parser: JSON -> keyword scan -> default insufficient."""
-    json_str = extract_outermost_json(raw)  # CHANGED: shared helper
+    json_str = extract_outermost_json(raw)
     if json_str:
         try:
             data = json.loads(json_str)
@@ -91,19 +89,18 @@ def _parse_validation_response(
             if vr == "insufficient":
                 return "insufficient", gaps
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
-            logger.warning("JSON parse error in validator response: %s", exc)  # CHANGED
+            logger.warning("JSON parse error in validator response: %s", exc)
 
     lower = raw.lower()
     has_insufficient = "insufficient" in lower
     has_sufficient = "sufficient" in lower
 
     if has_sufficient and not has_insufficient:
-        logger.warning("Fallback keyword match -> sufficient")  # CHANGED
+        logger.warning("Fallback keyword match -> sufficient")
         return "sufficient", "Inferred from keyword scan (JSON parse failed)."
 
-    logger.warning("Fallback default -> insufficient")  # CHANGED
+    logger.warning("Fallback default -> insufficient")
     return "insufficient", "Could not parse model response; defaulting to insufficient."
-
 
 def validator_agent(state: GraphState) -> dict:
     """Decide whether research_findings is sufficient for synthesis."""
@@ -112,7 +109,7 @@ def validator_agent(state: GraphState) -> dict:
     confidence = state.get("confidence_score")
 
     if not findings:
-        logger.warning("No research_findings in state -> insufficient")  # CHANGED
+        logger.warning("No research_findings in state -> insufficient")
         return {"validation_result": "insufficient"}
 
     score_hint = _interpret_score(confidence)
@@ -128,11 +125,11 @@ def validator_agent(state: GraphState) -> dict:
         HumanMessage(content=human_content),
     ]
 
-    response = get_llm().invoke(messages)  # CHANGED: lazy llm
+    response = get_llm().invoke(messages)
     raw_text = str(response.content) if hasattr(response, "content") else str(response)
 
     verdict, gaps = _parse_validation_response(raw_text)
-    logger.info(  # CHANGED
+    logger.info(
         "verdict=%s confidence_hint=%s gaps=%r", verdict, confidence, gaps,
     )
 

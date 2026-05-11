@@ -1,5 +1,6 @@
 # Core LangGraph runtime
 langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=2.0.0
 
 # LangChain framework + Gemini integration
 langchain>=0.3.0
@@ -13,3 +14,8 @@ tavily-python>=0.3.0
 
 # Environment / configuration
 python-dotenv>=1.0.0
+
+# FastAPI backend + SSE streaming
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+sse-starlette>=1.6.0

@@ -17,23 +17,24 @@ last 8 messages of conversation history are included so multi-turn follow-ups
 ("what about their competitors?") are answered with proper context.
 """
 
-import logging  # CHANGED: replaced print() with logging
+import logging
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from graph.state import GraphState
-from utils.llm import get_llm  # CHANGED: lazy singleton
+from utils.llm import get_llm
 
-logger = logging.getLogger(__name__)  # CHANGED
+logger = logging.getLogger(__name__)
 
 # Confidence < this triggers the visible low-confidence warning at the top.
-_LOW_CONFIDENCE_THRESHOLD = 6.0  # CHANGED: was 5.0; aligned to the user-requested rule
+_LOW_CONFIDENCE_THRESHOLD = 6.0
 
 # How many recent messages to forward as conversation context.
-_CONTEXT_MESSAGE_COUNT = 8  # CHANGED: was 6; user requested 8
+_CONTEXT_MESSAGE_COUNT = 8
 
-# CHANGED: full prompt rewrite — emoji headers, low-conf disclaimer rule,
-#          mandatory Sources note, multi-turn awareness.
+# Queries with more than this many HumanMessages are treated as follow-ups.
+_FOLLOWUP_THRESHOLD = 2
+
 _SYNTHESIS_SYSTEM_PROMPT = """\
 You are a senior business research analyst writing a structured report for a
 professional audience.  Your tone is clear, direct, and professional - like a
@@ -89,8 +90,49 @@ RULES
   Key Takeaways.
 """
 
+_FOLLOWUP_SYSTEM_PROMPT = """\
+This is a follow-up question in an ongoing research conversation.
+Do NOT repeat the company overview — the user already received a full report
+in a previous turn.  Focus the report ONLY on answering the specific
+follow-up question based on the new research findings.
 
-def _is_low_confidence(state: GraphState) -> bool:  # CHANGED: renamed from _is_low_quality
+USE THE SAME FIVE SECTION HEADERS but populate only sections that contain
+new information relevant to the follow-up question:
+
+## 🏢 Company Overview     — OMIT unless the follow-up explicitly requests it
+## 📰 Recent News & Developments
+## 💰 Financial Snapshot
+## 👥 Leadership & Strategy
+## 🔑 Key Takeaways
+
+If a section has nothing new to contribute for this specific follow-up,
+write a single line under it:
+> No new information for this section in the context of the follow-up question.
+
+LOW-CONFIDENCE DISCLAIMER
+-------------------------
+If the inputs include "Low confidence flag: true", you MUST begin the report
+(BEFORE the first ## header) with EXACTLY this blockquote line:
+
+> ⚠️ Data confidence is low. Some information may be incomplete or outdated.
+
+MANDATORY CLOSING NOTE
+----------------------
+Always end the report with this exact single line:
+
+_Sources note: information above is drawn from public web sources and may not reflect real-time market data._
+
+RULES
+-----
+- Focus tightly on what the follow-up question is actually asking.
+- Use the conversation history to resolve references such as "they", "their",
+  "the company" — they refer to the entity discussed earlier in the thread.
+- Only state facts supported by the research findings provided.
+- Do not fabricate figures, dates, or events.
+- Write in flowing prose; bullets only in Key Takeaways.
+"""
+
+def _is_low_confidence(state: GraphState) -> bool:
     """Return True when the low-confidence disclaimer should be added."""
     score = state.get("confidence_score")
     if score is not None and score < _LOW_CONFIDENCE_THRESHOLD:
@@ -99,6 +141,16 @@ def _is_low_confidence(state: GraphState) -> bool:  # CHANGED: renamed from _is_
         return True
     return False
 
+def _is_followup(state: GraphState) -> bool:
+    """Return True when this is a follow-up turn (more than 2 HumanMessages in history).
+
+    A follow-up turn means the user has already received at least one full
+    report, so the synthesis agent should avoid repeating the company overview
+    and instead focus on the specific follow-up question.
+    """
+    msgs = state.get("messages") or []
+    human_count = sum(1 for m in msgs if isinstance(m, HumanMessage))
+    return human_count > _FOLLOWUP_THRESHOLD
 
 def _format_conversation_context(messages: list[BaseMessage], n: int) -> str:
     """Last *n* messages as 'User: ...' / 'Assistant: ...' lines."""
@@ -117,8 +169,11 @@ def _format_conversation_context(messages: list[BaseMessage], n: int) -> str:
         lines.append(f"{role}: {content}")
     return "\n".join(lines)
 
-
-def _build_human_message(state: GraphState, low_confidence: bool) -> str:  # CHANGED: pass flag explicitly
+def _build_human_message(
+    state: GraphState,
+    low_confidence: bool,
+    is_followup: bool = False,
+) -> str:
     """Compose the human-turn payload carrying all data to the LLM."""
     query = (state.get("original_query") or "").strip()
     validation = state.get("validation_result") or "not assessed"
@@ -135,7 +190,8 @@ def _build_human_message(state: GraphState, low_confidence: bool) -> str:  # CHA
         f"Original user query:\n{query}",
         f"Validation result: {validation}",
         f"Research confidence score: {confidence_str}",
-        f"Low confidence flag: {'true' if low_confidence else 'false'}",  # CHANGED: explicit flag the prompt reads
+        f"Low confidence flag: {'true' if low_confidence else 'false'}",
+        f"Follow-up turn: {'true' if is_followup else 'false'}",
     ]
 
     if context_block:
@@ -150,33 +206,43 @@ def _build_human_message(state: GraphState, low_confidence: bool) -> str:  # CHA
 
     return "\n\n".join(parts)
 
-
 def synthesis_agent(state: GraphState) -> dict:
     """Generate the final user-facing markdown report."""
-    low_confidence = _is_low_confidence(state)  # CHANGED: renamed helper
+    low_confidence = _is_low_confidence(state)
+    is_followup = _is_followup(state)
 
     if low_confidence:
-        logger.info(  # CHANGED: was print()
+        logger.info(
             "Low-confidence signal (validation=%r, confidence=%s); disclaimer requested.",
             state.get("validation_result"),
             state.get("confidence_score"),
         )
 
-    human_content = _build_human_message(state, low_confidence)
+    if is_followup:
+        msgs = state.get("messages") or []
+        human_count = sum(1 for m in msgs if isinstance(m, HumanMessage))
+        logger.info(
+            "Follow-up turn detected (%d human messages); using focused follow-up prompt.",
+            human_count,
+        )
+
+    system_prompt = _FOLLOWUP_SYSTEM_PROMPT if is_followup else _SYNTHESIS_SYSTEM_PROMPT
+
+    human_content = _build_human_message(state, low_confidence, is_followup)
 
     messages_to_llm = [
-        SystemMessage(content=_SYNTHESIS_SYSTEM_PROMPT),
+        SystemMessage(content=system_prompt),
         HumanMessage(content=human_content),
     ]
 
-    response = get_llm().invoke(messages_to_llm)  # CHANGED: lazy llm
+    response = get_llm().invoke(messages_to_llm)
     report = (
         str(response.content).strip()
         if hasattr(response, "content")
         else str(response).strip()
     )
 
-    logger.info(  # CHANGED: was print()
+    logger.info(
         "Report generated (%d chars, low_confidence=%s)", len(report), low_confidence,
     )
 

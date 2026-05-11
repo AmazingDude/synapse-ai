@@ -22,25 +22,23 @@ Returned state channels
 """
 
 import json
-import logging  # CHANGED: replaced print() with logging
+import logging
 from typing import Literal
 
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage  # CHANGED: import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from graph.state import GraphState
-from utils.llm import get_llm  # CHANGED: lazy llm singleton
-from utils.parsing import extract_outermost_json  # CHANGED: shared parser
+from utils.llm import get_llm
+from utils.parsing import extract_outermost_json
 
-logger = logging.getLogger(__name__)  # CHANGED
+logger = logging.getLogger(__name__)
 
 # How many of the most-recent HumanMessages to include in the combined query.
 # Scanning only HumanMessages (not total messages) means AI response turns
 # — which can be very long and numerous — never push earlier user intent out
 # of the window.
-_MAX_HUMAN_TURNS = 6  # CHANGED: was _CONTEXT_WINDOW = 4 (total messages); now 6 human-only turns
+_MAX_HUMAN_TURNS = 6
 
-# CHANGED: BUG 1 — fully rewritten system prompt with liberal "clear" rule and
-#                  6-8 concrete few-shot examples covering both classes.
 _SYSTEM_PROMPT = """\
 You are a query-routing classifier for a business intelligence assistant.
 
@@ -66,11 +64,11 @@ DEFAULT RULE: When in doubt, choose "clear". It is always better to attempt
 research on a broad-but-named query than to frustrate the user with
 unnecessary clarification.
 
-MULTI-TURN RULE: If ANY message in the conversation history names a specific  # CHANGED: new rule
-company or entity, treat the ENTIRE conversation as being about that company.  # CHANGED
-A follow-up like "What about their competitors?" or "How are they doing?" is  # CHANGED
-CLEAR if a company was named in an earlier turn — you are given the combined   # CHANGED
-text of recent human turns, so look for a company name anywhere in that text.  # CHANGED
+MULTI-TURN RULE: If ANY message in the conversation history names a specific
+company or entity, treat the ENTIRE conversation as being about that company.
+A follow-up like "What about their competitors?" or "How are they doing?" is
+CLEAR if a company was named in an earlier turn — you are given the combined
+text of recent human turns, so look for a company name anywhere in that text.
 
 Few-shot examples
 -----------------
@@ -89,8 +87,8 @@ Query: "Give me an overview of Microsoft"
 Query: "iPhone sales trend"
 -> {"status": "clear", "reason": "iPhone is a well-known product."}
 
-Conversation history: ["Tell me about Apple", "What about their competitors?"]  # CHANGED: new example
--> {"status": "clear", "reason": "Apple was named earlier in the conversation."}  # CHANGED
+Conversation history: ["Tell me about Apple", "What about their competitors?"]
+-> {"status": "clear", "reason": "Apple was named earlier in the conversation."}
 
 Query: "Tell me about that company"
 -> {"status": "needs_clarification", "reason": "No company is named — 'that company' is undefined."}
@@ -107,8 +105,7 @@ Respond with ONLY a single JSON object, no markdown:
 {"status": "clear" | "needs_clarification", "reason": "<one short sentence>"}
 """
 
-
-def _extract_combined_query(state: GraphState) -> str:  # CHANGED: BUG 2 — was _extract_latest_human_message
+def _extract_combined_query(state: GraphState) -> str:
     """Return the last ``_MAX_HUMAN_TURNS`` HumanMessages joined as one string.
 
     Scans the ENTIRE message history but keeps only HumanMessage instances,
@@ -120,19 +117,17 @@ def _extract_combined_query(state: GraphState) -> str:  # CHANGED: BUG 2 — was
 
     Falls back to ``original_query`` if no human turns are found.
     """
-    msgs: list[BaseMessage] = state.get("messages") or []  # CHANGED
-    # CHANGED: collect ALL HumanMessages from the full history (skip AIMessages),
-    #          then slice to the last _MAX_HUMAN_TURNS entries.
-    all_human_texts = [  # CHANGED
-        str(m.content).strip()  # CHANGED
-        for m in msgs  # CHANGED: was msgs[-_CONTEXT_WINDOW:] — now the full list
-        if isinstance(m, HumanMessage) and str(m.content).strip()  # CHANGED
+    msgs: list[BaseMessage] = state.get("messages") or []
+    # Collect all HumanMessages from the full history, then slice to the last _MAX_HUMAN_TURNS.
+    all_human_texts = [
+        str(m.content).strip()
+        for m in msgs
+        if isinstance(m, HumanMessage) and str(m.content).strip()
     ]
-    recent_human_texts = all_human_texts[-_MAX_HUMAN_TURNS:]  # CHANGED: take last 6 human turns
-    if recent_human_texts:  # CHANGED
-        return "\n".join(recent_human_texts)  # CHANGED
-    return (state.get("original_query") or "").strip()  # CHANGED
-
+    recent_human_texts = all_human_texts[-_MAX_HUMAN_TURNS:]
+    if recent_human_texts:
+        return "\n".join(recent_human_texts)
+    return (state.get("original_query") or "").strip()
 
 def _parse_llm_response(
     raw: str,
@@ -145,24 +140,23 @@ def _parse_llm_response(
     side.  Genuine vagueness will still flow through because the LLM's actual
     JSON response will say so.
     """
-    json_str = extract_outermost_json(raw)  # CHANGED: shared helper
-    if not json_str:  # CHANGED
-        logger.warning("Could not extract JSON from clarity response; defaulting to clear.")  # CHANGED
-        return "clear", "Could not parse model response; defaulting to clear."  # CHANGED: was needs_clarification (BUG 1)
+    json_str = extract_outermost_json(raw)
+    if not json_str:
+        logger.warning("Could not extract JSON from clarity response; defaulting to clear.")
+        return "clear", "Could not parse model response; defaulting to clear."
 
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError as exc:
-        logger.warning("JSON decode error in clarity response: %s", exc)  # CHANGED
-        return "clear", "JSON decode error; defaulting to clear."  # CHANGED: was needs_clarification (BUG 1)
+        logger.warning("JSON decode error in clarity response: %s", exc)
+        return "clear", "JSON decode error; defaulting to clear."
 
     status_raw = str(data.get("status", "")).strip().lower()
     reason = str(data.get("reason", "No reason provided.")).strip()
 
-    if status_raw == "needs_clarification":  # CHANGED: only the explicit negative class
+    if status_raw == "needs_clarification":
         return "needs_clarification", reason
-    return "clear", reason  # CHANGED: everything else (including unknown values) -> clear
-
+    return "clear", reason
 
 def clarity_agent(state: GraphState) -> dict:
     """Evaluate query clarity using the combined recent conversation context.
@@ -170,26 +164,26 @@ def clarity_agent(state: GraphState) -> dict:
     Returns a partial state update with ``clarity_status`` and
     ``original_query`` (the combined text, so downstream agents see full intent).
     """
-    combined_query = _extract_combined_query(state)  # CHANGED: BUG 2
+    combined_query = _extract_combined_query(state)
 
-    if not combined_query:  # CHANGED: empty input -> ask for clarification
-        logger.warning("clarity_agent received no human input; routing to clarification.")  # CHANGED
-        return {"clarity_status": "needs_clarification", "original_query": ""}  # CHANGED
+    if not combined_query:
+        logger.warning("clarity_agent received no human input; routing to clarification.")
+        return {"clarity_status": "needs_clarification", "original_query": ""}
 
-    logger.info("Evaluating clarity for combined query: %r", combined_query)  # CHANGED
+    logger.info("Evaluating clarity for combined query: %r", combined_query)
 
     messages = [
         SystemMessage(content=_SYSTEM_PROMPT),
-        HumanMessage(content=f"Query to evaluate:\n{combined_query}"),  # CHANGED: combined
+        HumanMessage(content=f"Query to evaluate:\n{combined_query}"),
     ]
 
-    response = get_llm().invoke(messages)  # CHANGED: lazy llm
+    response = get_llm().invoke(messages)
     raw_text = str(response.content) if hasattr(response, "content") else str(response)
 
     status, reason = _parse_llm_response(raw_text)
-    logger.info("Clarity verdict: status=%s, reason=%s", status, reason)  # CHANGED
+    logger.info("Clarity verdict: status=%s, reason=%s", status, reason)
 
     return {
         "clarity_status": status,
-        "original_query": combined_query,  # CHANGED: BUG 2 — propagate combined query downstream
+        "original_query": combined_query,
     }
