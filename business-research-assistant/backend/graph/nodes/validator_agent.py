@@ -22,38 +22,14 @@ _SCORE_THRESHOLD_LOW = 4.0
 _SCORE_THRESHOLD_HIGH = 7.0
 
 _VALIDATION_SYSTEM_PROMPT = """\
-You are a senior research quality analyst for a business intelligence assistant.
-
-Your task is to decide whether a set of research findings is good enough to
-support writing an executive-level answer to the user's original query.
-
-Evaluate the findings against three criteria:
-
-1. RELEVANCE
-   Do the findings directly address what the user asked?  Search results that
-   drift to competitors, unrelated industries, or generic background without
-   touching the user's specific question are NOT relevant enough.
-
-2. COMPLETENESS
-   Are there major factual gaps?  Examples of critical gaps:
-   - No financial figures when the user asked about revenue or valuation.
-   - No recent events when the query is about current/recent activity.
-   - Only generic descriptions with no concrete facts, dates, or numbers.
-   - Data that appears to be older than 2 years and is likely outdated.
-
-3. SUBSTANCE
-   Is there enough concrete detail (specific numbers, dates, named people or
-   products, sourced events) to write at least two solid paragraphs that
-   would satisfy a business analyst?
-
-Decision rules:
-  - If all three criteria pass -> "sufficient"
-  - If any one criterion clearly fails -> "insufficient"
-  - When in doubt, lean towards "insufficient" to trigger better research.
+You are a research quality validator. Your job is ONLY to check if the
+provided research findings adequately answer the specific question asked.
+Ignore any previous conversation context — focus exclusively on whether
+the research answers THIS specific question.
 
 Respond with ONLY a valid JSON object (no markdown fences, no extra text):
 {"validation_result": "sufficient" | "insufficient", "gaps": "<one sentence - what is missing, or 'none'>"}
-"""
+"""  # CHANGED: replaced verbose multi-criteria prompt; validator no longer sees full history
 
 def _interpret_score(score: float | None) -> str:
     if score is None:
@@ -104,7 +80,6 @@ def _parse_validation_response(
 
 def validator_agent(state: GraphState) -> dict:
     """Decide whether research_findings is sufficient for synthesis."""
-    original_query = (state.get("original_query") or "").strip()
     findings = (state.get("research_findings") or "").strip()
     confidence = state.get("confidence_score")
 
@@ -112,13 +87,21 @@ def validator_agent(state: GraphState) -> dict:
         logger.warning("No research_findings in state -> insufficient")
         return {"validation_result": "insufficient"}
 
-    score_hint = _interpret_score(confidence)
+    # Extract the LATEST human message — not the combined multi-turn original_query.  # CHANGED
+    # Using original_query caused topic-switch loops (e.g. Apple → NVIDIA) because  # CHANGED
+    # it contained all prior human turns and the validator checked against them all.  # CHANGED
+    latest_human_message = ""  # CHANGED
+    for msg in reversed(state["messages"]):  # CHANGED
+        if isinstance(msg, HumanMessage):  # CHANGED
+            latest_human_message = str(msg.content).strip()  # CHANGED
+            break  # CHANGED
 
-    human_content = (
-        f"Original user query:\n{original_query}\n\n"
-        f"Confidence score hint:\n{score_hint}\n\n"
-        f"Research findings to evaluate:\n{findings}"
-    )
+    logger.info("Validating against latest question: %r", latest_human_message[:80])  # CHANGED
+
+    human_content = (  # CHANGED: only current question + findings; no history context
+        f"Question: {latest_human_message}\n\n"  # CHANGED
+        f"Research findings:\n{findings}"  # CHANGED
+    )  # CHANGED
 
     messages = [
         SystemMessage(content=_VALIDATION_SYSTEM_PROMPT),
@@ -129,8 +112,6 @@ def validator_agent(state: GraphState) -> dict:
     raw_text = str(response.content) if hasattr(response, "content") else str(response)
 
     verdict, gaps = _parse_validation_response(raw_text)
-    logger.info(
-        "verdict=%s confidence_hint=%s gaps=%r", verdict, confidence, gaps,
-    )
+    logger.info("verdict=%s confidence=%s gaps=%r", verdict, confidence, gaps)  # CHANGED
 
     return {"validation_result": verdict}

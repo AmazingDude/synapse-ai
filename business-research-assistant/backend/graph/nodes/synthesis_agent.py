@@ -18,13 +18,32 @@ last 8 messages of conversation history are included so multi-turn follow-ups
 """
 
 import logging
+import os  # CHANGED: needed to read GROQ_API_KEY for synthesis-specific LLM
+from functools import lru_cache  # CHANGED: singleton pattern for synthesis LLM
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_groq import ChatGroq  # CHANGED: synthesis uses its own higher-token instance
 
-from graph.state import GraphState
-from utils.llm import get_llm
+from graph.state import GraphState  # CHANGED: get_llm removed; synthesis uses _get_synthesis_llm
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)  # CHANGED: dedicated synthesis LLM with higher token budget
+def _get_synthesis_llm() -> ChatGroq:  # CHANGED
+    """Groq instance used only by synthesis_agent.
+
+    Uses max_tokens=4096 so the model can produce full 400-600 word reports
+    without being cut off mid-section.  Other agents use the shared get_llm()
+    which has no explicit token cap.
+    """  # CHANGED
+    return ChatGroq(  # CHANGED
+        model="llama-3.3-70b-versatile",  # CHANGED
+        temperature=0.3,  # CHANGED
+        api_key=os.getenv("GROQ_API_KEY"),  # CHANGED: env already loaded by utils/llm.py
+        max_tokens=4096,  # CHANGED: allows detailed multi-section reports
+    )  # CHANGED
+
 
 # Confidence < this triggers the visible low-confidence warning at the top.
 _LOW_CONFIDENCE_THRESHOLD = 6.0
@@ -80,6 +99,11 @@ _Sources note: information above is drawn from public web sources and may not re
 
 RULES
 -----
+- Write detailed, substantive paragraphs — minimum 3-4 sentences per section.
+- Include specific numbers, dates, names, and figures from the research.
+- Do NOT write one-sentence sections. Do NOT use vague language.
+- Each section must contain concrete facts from the research data provided.
+- Target length: 400-600 words for the full report.
 - Only state facts supported by the research findings provided.
 - Do not fabricate figures, dates, or events.
 - If a section genuinely has no data, say so clearly rather than padding.
@@ -88,7 +112,7 @@ RULES
   the company discussed earlier in the conversation).
 - Write in flowing prose for the first four sections; bullets only in
   Key Takeaways.
-"""
+"""  # CHANGED: added detail/length rules to prevent thin one-sentence sections
 
 _FOLLOWUP_SYSTEM_PROMPT = """\
 This is a follow-up question in an ongoing research conversation.
@@ -124,13 +148,18 @@ _Sources note: information above is drawn from public web sources and may not re
 
 RULES
 -----
+- Write detailed, substantive paragraphs — minimum 3-4 sentences per section.
+- Include specific numbers, dates, names, and figures from the research.
+- Do NOT write one-sentence sections. Do NOT use vague language.
+- Each section must contain concrete facts from the research data provided.
+- Target length: 400-600 words for the full report.
 - Focus tightly on what the follow-up question is actually asking.
 - Use the conversation history to resolve references such as "they", "their",
   "the company" — they refer to the entity discussed earlier in the thread.
 - Only state facts supported by the research findings provided.
 - Do not fabricate figures, dates, or events.
 - Write in flowing prose; bullets only in Key Takeaways.
-"""
+"""  # CHANGED: added detail/length rules to follow-up prompt too
 
 def _is_low_confidence(state: GraphState) -> bool:
     """Return True when the low-confidence disclaimer should be added."""
@@ -235,7 +264,7 @@ def synthesis_agent(state: GraphState) -> dict:
         HumanMessage(content=human_content),
     ]
 
-    response = get_llm().invoke(messages_to_llm)
+    response = _get_synthesis_llm().invoke(messages_to_llm)  # CHANGED: uses 4096-token instance
     report = (
         str(response.content).strip()
         if hasattr(response, "content")

@@ -16,23 +16,28 @@ const VARIANT_META: Record<
 };
 
 /** A centered system status row with an icon keyed to the message variant. */
-function SystemMessage({
+function SystemMessage({ // CHANGED: now accepts isLive to show pulsing dot
   content,
   variant,
+  isLive = false, // CHANGED: true when isLoading and this is the last message
 }: {
   content: string;
   variant?: SystemVariant;
+  isLive?: boolean; // CHANGED
 }) {
   const meta = variant ? VARIANT_META[variant] : null;
   const { Icon, iconClass, textClass } = meta ?? {
     Icon: null,
     iconClass: "",
-    textClass: "text-neutral-500",
+    textClass: "text-neutral-400", // CHANGED: slightly brighter for live progress pills
   };
 
   return (
-    <div className="flex items-center justify-center gap-1.5 py-0.5">
-      {Icon && <Icon className={`w-3.5 h-3.5 flex-none ${iconClass}`} />}
+    <div className="flex items-center justify-center gap-1.5 py-0.5"> {/* CHANGED: centered pill */}
+      {isLive && ( // CHANGED: pulsing dot shown only when this is the active live message
+        <span className="animate-pulse w-2 h-2 rounded-full bg-indigo-400 inline-block mr-2" /> // CHANGED
+      )}
+      {!isLive && Icon && <Icon className={`w-3.5 h-3.5 flex-none ${iconClass}`} />} {/* CHANGED: hide icon when live dot shown */}
       <p className={`text-xs ${textClass}`}>{content}</p>
     </div>
   );
@@ -73,7 +78,7 @@ export default function ChatPanel({
       )}
 
       {/* ── Message list ────────────────────────────────────────── */}
-      {messages.map((msg) => {
+      {messages.map((msg, idx) => { // CHANGED: track index to detect last message
         if (msg.role === "user") {
           return (
             <div key={msg.id} className="flex flex-col items-end gap-1">
@@ -90,8 +95,10 @@ export default function ChatPanel({
         }
 
         if (msg.role === "system") {
+          const isLastMessage = idx === messages.length - 1; // CHANGED
+          const isLive = isLoading && isLastMessage; // CHANGED: pulse only on the active last pill
           return (
-            <SystemMessage key={msg.id} content={msg.content} variant={msg.variant} />
+            <SystemMessage key={msg.id} content={msg.content} variant={msg.variant} isLive={isLive} /> // CHANGED
           );
         }
 

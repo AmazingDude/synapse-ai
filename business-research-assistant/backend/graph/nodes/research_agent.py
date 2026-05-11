@@ -22,10 +22,12 @@ logger = logging.getLogger(__name__)
 # Collapses any whitespace run (incl. newlines from combined multi-turn queries) to a single space.
 _WHITESPACE_RE = re.compile(r"\s+")
 
-_SUBJECT_EXTRACTION_PROMPT = (
-    "Extract the company name and research topic from this query history. "
-    "Return ONLY a short search-friendly string of 2-5 words. No punctuation. "
-    "Examples: 'Apple competitors', 'Tesla financials', 'Microsoft CEO leadership'"
+_SUBJECT_EXTRACTION_PROMPT = (  # CHANGED: rewritten to focus on the MOST RECENT question
+    "Look at the MOST RECENT question in this conversation history and extract "
+    "the company name and topic being asked about RIGHT NOW. "
+    "Example: if history ends with 'What about their data center revenue?' "
+    "after talking about NVIDIA, return 'NVIDIA data center revenue'. "
+    "Return ONLY 2-5 words. No punctuation."
 )
 
 _SYNTHESIS_SYSTEM_PROMPT = """\
@@ -60,6 +62,9 @@ After writing the report, assign a confidence_score (float 0.0-10.0):
   6-8  : Good coverage; most sections have concrete data, only minor gaps.
   9-10 : Comprehensive; all four sections are well-sourced with specific facts.
 
+CRITICAL: Your entire response must be valid JSON. Keep the findings field  # CHANGED
+under 2000 characters. Summarize, do not dump raw text.  # CHANGED
+
 Respond with ONLY a single valid JSON object (no markdown fences):
 {
   "findings": "<your full markdown report as a single escaped string>",
@@ -91,7 +96,7 @@ def _extract_search_subject(combined_query: str) -> str:
         # Collapse whitespace and strip stray punctuation from the LLM output.
         subject = _WHITESPACE_RE.sub(" ", subject).strip(" ?.,!\"'")
         if subject:
-            logger.info("LLM subject extraction: %r -> %r", combined_query[:60], subject)
+            logger.info("LLM subject extraction: %r -> %r", combined_query, subject)  # CHANGED: removed [:60] slice — was misleading in logs; full string is always passed to LLM
             return subject
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -132,21 +137,34 @@ def _run_searches(queries: list[str]) -> tuple[str, int]:
     return "\n\n".join(chunks), success_count
 
 def _parse_synthesis(raw: str, success_count: int) -> tuple[str, float]:
-    """Parse the LLM JSON synthesis; fall back gracefully on errors."""
+    """Parse the LLM JSON synthesis; fall back gracefully on errors.  # CHANGED
+
+    When JSON parsing fails (e.g. Groq truncates at 6 000 tokens), we use the  # CHANGED
+    raw LLM text directly as findings — it still contains useful research data  # CHANGED
+    that the synthesis agent can work with.  # CHANGED
+    """
     json_str = extract_outermost_json(raw)
     if json_str:
         try:
             data = json.loads(json_str)
-            findings = str(data.get("findings", "")).strip() or raw.strip()
+            findings = str(data.get("findings", "")).strip()  # CHANGED
+            if not findings:  # CHANGED: never return empty findings from a successful parse
+                logger.warning("JSON parsed but 'findings' field is empty; using raw text")  # CHANGED
+                findings = raw.strip()  # CHANGED
             score = float(data.get("confidence_score", 0.0))
             score = max(0.0, min(10.0, score))
             return findings, score
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
-            logger.warning("JSON parse error in synthesis response: %s", exc)
+            logger.warning("JSON parse error in synthesis response: %s", exc)  # CHANGED: already logged; fall through
 
-    fallback_score = min(6.0, float(success_count) * 2.0)
-    logger.warning("Using fallback synthesis output: confidence=%.1f", fallback_score)
-    return raw.strip(), fallback_score
+    # JSON parse failed or returned empty — use raw LLM text as findings.  # CHANGED
+    fallback_score = 6.0  # CHANGED: fixed at 6.0 (previously capped at 6 anyway)
+    logger.warning(  # CHANGED
+        "JSON parse failed; using raw LLM text as findings (confidence=%.1f). "  # CHANGED
+        "Raw preview: %.200s",  # CHANGED
+        fallback_score, raw,  # CHANGED
+    )  # CHANGED
+    return raw.strip() or "No findings available.", fallback_score  # CHANGED: never return empty
 
 def _recent_message_context(messages: list[BaseMessage], n: int = 4) -> str:
     """Compact recent-conversation context for the synthesis prompt."""

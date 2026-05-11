@@ -80,8 +80,9 @@ async function consumeStream(
           if (!raw) continue;
 
           try {
-            const event = JSON.parse(raw) as SSEEvent;
-            dispatch(event, handlers);
+            const event = JSON.parse(raw) as SSEEvent; // CHANGED: unchanged
+            console.log("[SSE]", event.type, event); // CHANGED: debug every parsed event
+            dispatch(event, handlers); // CHANGED: unchanged
           } catch {
             // Silently skip malformed JSON frames.
           }
