@@ -1,0 +1,15 @@
+# Core LangGraph runtime
+langgraph>=0.2.0
+
+# LangChain framework + Gemini integration
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-google-genai>=2.0.0
+
+# Tavily web search (modern non-deprecated wrapper + the underlying SDK)
+langchain-tavily>=0.1.0
+tavily-python>=0.3.0
+
+# Environment / configuration
+python-dotenv>=1.0.0
