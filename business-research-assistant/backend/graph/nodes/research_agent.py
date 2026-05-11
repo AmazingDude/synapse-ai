@@ -1,4 +1,4 @@
-"""
+﻿"""
 Research Agent — second node in the business research pipeline.
 
 Runs three targeted Tavily searches and asks the LLM to synthesise the raw
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Collapses any whitespace run (incl. newlines from combined multi-turn queries) to a single space.
 _WHITESPACE_RE = re.compile(r"\s+")
 
-_SUBJECT_EXTRACTION_PROMPT = (  # CHANGED: rewritten to focus on the MOST RECENT question
+_SUBJECT_EXTRACTION_PROMPT = (
     "Look at the MOST RECENT question in this conversation history and extract "
     "the company name and topic being asked about RIGHT NOW. "
     "Example: if history ends with 'What about their data center revenue?' "
@@ -62,8 +62,8 @@ After writing the report, assign a confidence_score (float 0.0-10.0):
   6-8  : Good coverage; most sections have concrete data, only minor gaps.
   9-10 : Comprehensive; all four sections are well-sourced with specific facts.
 
-CRITICAL: Your entire response must be valid JSON. Keep the findings field  # CHANGED
-under 2000 characters. Summarize, do not dump raw text.  # CHANGED
+CRITICAL: Your entire response must be valid JSON. Keep the findings field
+under 2000 characters. Summarize, do not dump raw text.
 
 Respond with ONLY a single valid JSON object (no markdown fences):
 {
@@ -96,7 +96,7 @@ def _extract_search_subject(combined_query: str) -> str:
         # Collapse whitespace and strip stray punctuation from the LLM output.
         subject = _WHITESPACE_RE.sub(" ", subject).strip(" ?.,!\"'")
         if subject:
-            logger.info("LLM subject extraction: %r -> %r", combined_query, subject)  # CHANGED: removed [:60] slice — was misleading in logs; full string is always passed to LLM
+            logger.info("LLM subject extraction: %r -> %r", combined_query, subject)
             return subject
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -137,34 +137,34 @@ def _run_searches(queries: list[str]) -> tuple[str, int]:
     return "\n\n".join(chunks), success_count
 
 def _parse_synthesis(raw: str, success_count: int) -> tuple[str, float]:
-    """Parse the LLM JSON synthesis; fall back gracefully on errors.  # CHANGED
+    """Parse the LLM JSON synthesis; fall back gracefully on errors.
 
-    When JSON parsing fails (e.g. Groq truncates at 6 000 tokens), we use the  # CHANGED
-    raw LLM text directly as findings — it still contains useful research data  # CHANGED
-    that the synthesis agent can work with.  # CHANGED
+    When JSON parsing fails (e.g. Groq truncates at 6 000 tokens), we use the
+    raw LLM text directly as findings — it still contains useful research data
+    that the synthesis agent can work with.
     """
     json_str = extract_outermost_json(raw)
     if json_str:
         try:
             data = json.loads(json_str)
-            findings = str(data.get("findings", "")).strip()  # CHANGED
-            if not findings:  # CHANGED: never return empty findings from a successful parse
-                logger.warning("JSON parsed but 'findings' field is empty; using raw text")  # CHANGED
-                findings = raw.strip()  # CHANGED
+            findings = str(data.get("findings", "")).strip()
+            if not findings:
+                logger.warning("JSON parsed but 'findings' field is empty; using raw text")
+                findings = raw.strip()
             score = float(data.get("confidence_score", 0.0))
             score = max(0.0, min(10.0, score))
             return findings, score
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
-            logger.warning("JSON parse error in synthesis response: %s", exc)  # CHANGED: already logged; fall through
+            logger.warning("JSON parse error in synthesis response: %s", exc)
 
-    # JSON parse failed or returned empty — use raw LLM text as findings.  # CHANGED
-    fallback_score = 6.0  # CHANGED: fixed at 6.0 (previously capped at 6 anyway)
-    logger.warning(  # CHANGED
-        "JSON parse failed; using raw LLM text as findings (confidence=%.1f). "  # CHANGED
-        "Raw preview: %.200s",  # CHANGED
-        fallback_score, raw,  # CHANGED
-    )  # CHANGED
-    return raw.strip() or "No findings available.", fallback_score  # CHANGED: never return empty
+    # JSON parse failed or returned empty — use raw LLM text as findings.
+    fallback_score = 6.0
+    logger.warning(
+        "JSON parse failed; using raw LLM text as findings (confidence=%.1f). "
+        "Raw preview: %.200s",
+        fallback_score, raw,
+    )
+    return raw.strip() or "No findings available.", fallback_score
 
 def _recent_message_context(messages: list[BaseMessage], n: int = 4) -> str:
     """Compact recent-conversation context for the synthesis prompt."""

@@ -1,12 +1,12 @@
-# Core LangGraph runtime
+﻿# Core LangGraph runtime
 langgraph>=0.2.0
 langgraph-checkpoint-sqlite>=2.0.0
 
-# LangChain framework + Groq integration  # CHANGED: switched from Gemini to Groq
+# LangChain framework + Groq integration
 langchain>=0.3.0
 langchain-core>=0.3.0
 langchain-community>=0.3.0
-langchain-groq>=0.2.0  # CHANGED: added; replaces langchain-google-genai
+langchain-groq>=0.2.0
 
 # Tavily web search (modern non-deprecated wrapper + the underlying SDK)
 langchain-tavily>=0.1.0

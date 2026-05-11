@@ -1,4 +1,4 @@
-"""
+﻿"""
 Synthesis Agent — fourth and final node in the business research pipeline.
 
 Transforms validated research findings into a polished user-facing report.
@@ -12,41 +12,41 @@ Report structure (enforced via system prompt)
     ## 🔑 Key Takeaways
 
 The report always ends with a single-line "Sources note" disclaimer.  When
-``confidence_score < 6``, a visible warning block is added at the top.  The
+``confidence_score < 5``, a visible warning block is added at the top.  The
 last 8 messages of conversation history are included so multi-turn follow-ups
 ("what about their competitors?") are answered with proper context.
 """
 
 import logging
-import os  # CHANGED: needed to read GROQ_API_KEY for synthesis-specific LLM
-from functools import lru_cache  # CHANGED: singleton pattern for synthesis LLM
+import os
+from functools import lru_cache
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_groq import ChatGroq  # CHANGED: synthesis uses its own higher-token instance
+from langchain_groq import ChatGroq
 
-from graph.state import GraphState  # CHANGED: get_llm removed; synthesis uses _get_synthesis_llm
+from graph.state import GraphState
 
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=1)  # CHANGED: dedicated synthesis LLM with higher token budget
-def _get_synthesis_llm() -> ChatGroq:  # CHANGED
+@lru_cache(maxsize=1)
+def _get_synthesis_llm() -> ChatGroq:
     """Groq instance used only by synthesis_agent.
 
     Uses max_tokens=4096 so the model can produce full 400-600 word reports
     without being cut off mid-section.  Other agents use the shared get_llm()
     which has no explicit token cap.
-    """  # CHANGED
-    return ChatGroq(  # CHANGED
-        model="llama-3.3-70b-versatile",  # CHANGED
-        temperature=0.3,  # CHANGED
-        api_key=os.getenv("GROQ_API_KEY"),  # CHANGED: env already loaded by utils/llm.py
-        max_tokens=4096,  # CHANGED: allows detailed multi-section reports
-    )  # CHANGED
+    """
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=0.3,
+        api_key=os.getenv("GROQ_API_KEY"),
+        max_tokens=4096,
+    )
 
 
 # Confidence < this triggers the visible low-confidence warning at the top.
-_LOW_CONFIDENCE_THRESHOLD = 6.0
+_LOW_CONFIDENCE_THRESHOLD = 5.0
 
 # How many recent messages to forward as conversation context.
 _CONTEXT_MESSAGE_COUNT = 8
@@ -112,7 +112,7 @@ RULES
   the company discussed earlier in the conversation).
 - Write in flowing prose for the first four sections; bullets only in
   Key Takeaways.
-"""  # CHANGED: added detail/length rules to prevent thin one-sentence sections
+"""
 
 _FOLLOWUP_SYSTEM_PROMPT = """\
 This is a follow-up question in an ongoing research conversation.
@@ -159,16 +159,18 @@ RULES
 - Only state facts supported by the research findings provided.
 - Do not fabricate figures, dates, or events.
 - Write in flowing prose; bullets only in Key Takeaways.
-"""  # CHANGED: added detail/length rules to follow-up prompt too
+"""
 
 def _is_low_confidence(state: GraphState) -> bool:
-    """Return True when the low-confidence disclaimer should be added."""
+    """Return True when the low-confidence disclaimer should be added.
+
+    Only triggers on actual data-quality issues (score < 5).  The validator
+    returning "insufficient" is no longer counted — that was causing the
+    disclaimer to appear even when research data was fine but the validator
+    was pedantic about formatting.
+    """
     score = state.get("confidence_score")
-    if score is not None and score < _LOW_CONFIDENCE_THRESHOLD:
-        return True
-    if state.get("validation_result") == "insufficient":
-        return True
-    return False
+    return score is not None and score < _LOW_CONFIDENCE_THRESHOLD
 
 def _is_followup(state: GraphState) -> bool:
     """Return True when this is a follow-up turn (more than 2 HumanMessages in history).
@@ -264,7 +266,7 @@ def synthesis_agent(state: GraphState) -> dict:
         HumanMessage(content=human_content),
     ]
 
-    response = _get_synthesis_llm().invoke(messages_to_llm)  # CHANGED: uses 4096-token instance
+    response = _get_synthesis_llm().invoke(messages_to_llm)
     report = (
         str(response.content).strip()
         if hasattr(response, "content")

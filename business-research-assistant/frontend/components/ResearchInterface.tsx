@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -97,38 +97,38 @@ export default function ResearchInterface() {
    * If the last message is not a system message, appends a new one instead.
    * This makes agent-progress labels animate in-place rather than stacking.
    */
-  const updateOrAppendSystemMessage = (content: string, variant?: SystemVariant) => { // CHANGED
-    setMessages((prev) => { // CHANGED
-      const last = prev[prev.length - 1]; // CHANGED
-      if (last?.role === "system") { // CHANGED: replace the last system message in-place
-        return [...prev.slice(0, -1), { ...last, content, variant }]; // CHANGED
+  const updateOrAppendSystemMessage = (content: string, variant?: SystemVariant) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "system") {
+        return [...prev.slice(0, -1), { ...last, content, variant }];
       }
-      return [...prev, { id: crypto.randomUUID(), role: "system", content, variant }]; // CHANGED
-    }); // CHANGED
-  }; // CHANGED
+      return [...prev, { id: crypto.randomUUID(), role: "system", content, variant }];
+    });
+  };
 
   /**
    * Shared SSE handler factory — avoids duplicating handler logic between
    * handleSubmit and handleClarification.
    */
   const buildHandlers = (): StreamHandlers => ({
-    onAgentStart: (agent, _label) => { // CHANGED
-      const agentLabels: Record<string, string> = { // CHANGED
-        clarity_agent:   "🔍 Evaluating query clarity...", // CHANGED
-        research_agent:  "📊 Searching for company data...", // CHANGED
-        validator_agent: "✅ Validating research quality...", // CHANGED
-        synthesis_agent: "📝 Writing your report...", // CHANGED
-      }; // CHANGED
-      const label = agentLabels[agent] ?? _label; // CHANGED
-      setAgentStatus(label); // CHANGED
-      // Always replace the last message unconditionally — an initial system  // CHANGED
-      // pill is guaranteed to exist (added in handleSubmit / handleClarification  // CHANGED
-      // before the stream starts). Conditional replace caused duplicates when  // CHANGED
-      // the state snapshot inside the closure hadn't refreshed yet.  // CHANGED
-      setMessages((prev) => [  // CHANGED
-        ...prev.slice(0, -1),  // CHANGED: drop the last pill (always a system msg here)
-        { id: crypto.randomUUID(), role: "system" as MessageRole, content: label },  // CHANGED
-      ]);  // CHANGED
+    onAgentStart: (agent, _label) => {
+      const agentLabels: Record<string, string> = {
+        clarity_agent:   "🔍 Evaluating query clarity...",
+        research_agent:  "📊 Searching for company data...",
+        validator_agent: "✅ Validating research quality...",
+        synthesis_agent: "📝 Writing your report...",
+      };
+      const label = agentLabels[agent] ?? _label;
+      setAgentStatus(label);
+      // Always replace the last message unconditionally — an initial system
+      // pill is guaranteed to exist (added in handleSubmit / handleClarification
+      // before the stream starts). Conditional replace caused duplicates when
+      // the state snapshot inside the closure hadn't refreshed yet.
+      setMessages((prev) => [
+        ...prev.slice(0, -1),
+        { id: crypto.randomUUID(), role: "system" as MessageRole, content: label },
+      ]);
     },
     onClarificationNeeded: (msg) => {
       setAwaitingClarification(true);
@@ -137,11 +137,11 @@ export default function ResearchInterface() {
       setAgentStatus(null);
     },
     onReport: (content) => {
-      setCurrentReport(content); // CHANGED: always overwrites — no conditional guard
-      setMessages((prev) => { // CHANGED: clear stale "Report ready" messages, then add fresh one
-        const filtered = prev.filter((m) => !(m.role === "system" && m.content === "✅ Report ready")); // CHANGED
-        return [...filtered, { id: crypto.randomUUID(), role: "system", content: "✅ Report ready", variant: "success" as SystemVariant }]; // CHANGED
-      }); // CHANGED
+      setCurrentReport(content);
+      setMessages((prev) => {
+        const filtered = prev.filter((m) => !(m.role === "system" && m.content === "✅ Report ready"));
+        return [...filtered, { id: crypto.randomUUID(), role: "system", content: "✅ Report ready", variant: "success" as SystemVariant }];
+      });
     },
     onError: (msg) => {
       addMessage("system", msg, "error");
@@ -150,12 +150,12 @@ export default function ResearchInterface() {
       setAgentStatus(null);
     },
     onDone: () => {
-      setIsLoading(false); // CHANGED
-      setAgentStatus(null); // CHANGED
-      updateOrAppendSystemMessage("✅ Done"); // CHANGED: replace last system msg with "Done"
-      setTimeout(() => { // CHANGED: remove the "Done" pill after 2 s
-        setMessages((prev) => prev.filter((m) => !(m.role === "system" && m.content === "✅ Done"))); // CHANGED
-      }, 2000); // CHANGED
+      setIsLoading(false);
+      setAgentStatus(null);
+      updateOrAppendSystemMessage("✅ Done");
+      setTimeout(() => {
+        setMessages((prev) => prev.filter((m) => !(m.role === "system" && m.content === "✅ Done")));
+      }, 2000);
     },
   });
 
@@ -172,11 +172,11 @@ export default function ResearchInterface() {
     setIsLoading(true);
     setCurrentReport(null);
     setConfidence(null);
-    setAgentStatus("🔍 Evaluating query clarity..."); // CHANGED: descriptive initial status
-    setMessages((prev) => [ // CHANGED: add initial system progress pill
+    setAgentStatus("🔍 Evaluating query clarity...");
+    setMessages((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), role: "system", content: "🔍 Evaluating query clarity..." }, // CHANGED
-    ]); // CHANGED
+      { id: crypto.randomUUID(), role: "system", content: "🔍 Evaluating query clarity..." },
+    ]);
 
     await streamResearch(query, threadId, buildHandlers());
   };
@@ -194,11 +194,11 @@ export default function ResearchInterface() {
     setClarificationPrompt(null);
     addMessage("user", answer);
     setIsLoading(true);
-    setAgentStatus("🔍 Evaluating query clarity..."); // CHANGED: consistent with initial status
-    setMessages((prev) => [ // CHANGED: add initial progress pill for clarification flow too
+    setAgentStatus("🔍 Evaluating query clarity...");
+    setMessages((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), role: "system", content: "🔍 Evaluating query clarity..." }, // CHANGED
-    ]); // CHANGED
+      { id: crypto.randomUUID(), role: "system", content: "🔍 Evaluating query clarity..." },
+    ]);
 
     await streamClarification(answer, threadId, buildHandlers());
   };

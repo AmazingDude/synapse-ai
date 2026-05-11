@@ -1,4 +1,4 @@
-"""
+﻿"""
 Validator Agent — third node in the business research pipeline.
 
 Acts as a quality gate between research and synthesis.  Asks the LLM whether
@@ -29,7 +29,7 @@ the research answers THIS specific question.
 
 Respond with ONLY a valid JSON object (no markdown fences, no extra text):
 {"validation_result": "sufficient" | "insufficient", "gaps": "<one sentence - what is missing, or 'none'>"}
-"""  # CHANGED: replaced verbose multi-criteria prompt; validator no longer sees full history
+"""
 
 def _interpret_score(score: float | None) -> str:
     if score is None:
@@ -87,21 +87,21 @@ def validator_agent(state: GraphState) -> dict:
         logger.warning("No research_findings in state -> insufficient")
         return {"validation_result": "insufficient"}
 
-    # Extract the LATEST human message — not the combined multi-turn original_query.  # CHANGED
-    # Using original_query caused topic-switch loops (e.g. Apple → NVIDIA) because  # CHANGED
-    # it contained all prior human turns and the validator checked against them all.  # CHANGED
-    latest_human_message = ""  # CHANGED
-    for msg in reversed(state["messages"]):  # CHANGED
-        if isinstance(msg, HumanMessage):  # CHANGED
-            latest_human_message = str(msg.content).strip()  # CHANGED
-            break  # CHANGED
+    # Extract the LATEST human message — not the combined multi-turn original_query.
+    # Using original_query caused topic-switch loops (e.g. Apple → NVIDIA) because
+    # it contained all prior human turns and the validator checked against them all.
+    latest_human_message = ""
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            latest_human_message = str(msg.content).strip()
+            break
 
-    logger.info("Validating against latest question: %r", latest_human_message[:80])  # CHANGED
+    logger.info("Validating against latest question: %r", latest_human_message[:80])
 
-    human_content = (  # CHANGED: only current question + findings; no history context
-        f"Question: {latest_human_message}\n\n"  # CHANGED
-        f"Research findings:\n{findings}"  # CHANGED
-    )  # CHANGED
+    human_content = (
+        f"Question: {latest_human_message}\n\n"
+        f"Research findings:\n{findings}"
+    )
 
     messages = [
         SystemMessage(content=_VALIDATION_SYSTEM_PROMPT),
@@ -112,6 +112,6 @@ def validator_agent(state: GraphState) -> dict:
     raw_text = str(response.content) if hasattr(response, "content") else str(response)
 
     verdict, gaps = _parse_validation_response(raw_text)
-    logger.info("verdict=%s confidence=%s gaps=%r", verdict, confidence, gaps)  # CHANGED
+    logger.info("verdict=%s confidence=%s gaps=%r", verdict, confidence, gaps)
 
     return {"validation_result": verdict}

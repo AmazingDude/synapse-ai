@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef } from "react";
 import { TriangleAlert, CircleCheck, CircleX, Info } from "lucide-react";
@@ -16,28 +16,28 @@ const VARIANT_META: Record<
 };
 
 /** A centered system status row with an icon keyed to the message variant. */
-function SystemMessage({ // CHANGED: now accepts isLive to show pulsing dot
+function SystemMessage({
   content,
   variant,
-  isLive = false, // CHANGED: true when isLoading and this is the last message
+  isLive = false,
 }: {
   content: string;
   variant?: SystemVariant;
-  isLive?: boolean; // CHANGED
+  isLive?: boolean;
 }) {
   const meta = variant ? VARIANT_META[variant] : null;
   const { Icon, iconClass, textClass } = meta ?? {
     Icon: null,
     iconClass: "",
-    textClass: "text-neutral-400", // CHANGED: slightly brighter for live progress pills
+    textClass: "text-neutral-400",
   };
 
   return (
-    <div className="flex items-center justify-center gap-1.5 py-0.5"> {/* CHANGED: centered pill */}
-      {isLive && ( // CHANGED: pulsing dot shown only when this is the active live message
-        <span className="animate-pulse w-2 h-2 rounded-full bg-indigo-400 inline-block mr-2" /> // CHANGED
+    <div className="flex items-center justify-center gap-1.5 py-0.5">
+      {isLive && (
+        <span className="animate-pulse w-2 h-2 rounded-full bg-indigo-400 inline-block mr-2" />
       )}
-      {!isLive && Icon && <Icon className={`w-3.5 h-3.5 flex-none ${iconClass}`} />} {/* CHANGED: hide icon when live dot shown */}
+      {!isLive && Icon && <Icon className={`w-3.5 h-3.5 flex-none ${iconClass}`} />}
       <p className={`text-xs ${textClass}`}>{content}</p>
     </div>
   );
@@ -78,7 +78,7 @@ export default function ChatPanel({
       )}
 
       {/* ── Message list ────────────────────────────────────────── */}
-      {messages.map((msg, idx) => { // CHANGED: track index to detect last message
+      {messages.map((msg, idx) => {
         if (msg.role === "user") {
           return (
             <div key={msg.id} className="flex flex-col items-end gap-1">
@@ -95,10 +95,10 @@ export default function ChatPanel({
         }
 
         if (msg.role === "system") {
-          const isLastMessage = idx === messages.length - 1; // CHANGED
-          const isLive = isLoading && isLastMessage; // CHANGED: pulse only on the active last pill
+          const isLastMessage = idx === messages.length - 1;
+          const isLive = isLoading && isLastMessage;
           return (
-            <SystemMessage key={msg.id} content={msg.content} variant={msg.variant} isLive={isLive} /> // CHANGED
+            <SystemMessage key={msg.id} content={msg.content} variant={msg.variant} isLive={isLive} />
           );
         }
 

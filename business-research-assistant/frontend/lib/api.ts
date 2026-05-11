@@ -1,4 +1,4 @@
-/**
+﻿/**
  * API client for the Business Research Assistant backend.
  * All calls use relative URLs so Next.js rewrites proxy them to
  * http://localhost:8000 in development without CORS issues.
@@ -80,9 +80,9 @@ async function consumeStream(
           if (!raw) continue;
 
           try {
-            const event = JSON.parse(raw) as SSEEvent; // CHANGED: unchanged
-            console.log("[SSE]", event.type, event); // CHANGED: debug every parsed event
-            dispatch(event, handlers); // CHANGED: unchanged
+            const event = JSON.parse(raw) as SSEEvent;
+            console.log("[SSE]", event.type, event);
+            dispatch(event, handlers);
           } catch {
             // Silently skip malformed JSON frames.
           }
